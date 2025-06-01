@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Audio HF receiver</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 16px;
+            background-color: #010;
+            color: #eee;
+        }
+
+        .channel {
+            margin-bottom: 10px;
+        }
+
+        canvas {
+            width: 100%;
+            height: 256px;
+            background: #121;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Audio HF receiver</h1>
+    <button id="start">Start</button>
+
+    <div id="channels"></div>
+
+    <canvas id="spectrumCanvas"></canvas>
+
+    <script type="module">
+        let context, source, analyser;
+
+        const startBtn = document.getElementById('start');
+        const channelContainer = document.getElementById('channels');
+        const canvas = document.getElementById('spectrumCanvas');
+        const canvasCtx = canvas.getContext('2d');
+
+        canvas.height = 256;
+
+        const channels = [
+            {name: '8–11 кГц', shift: 8000},
+            {name: '11–14 кГц', shift: 11000},
+            {name: '14–17 кГц', shift: 14000},
+            {name: '17–20 кГц', shift: 17000},
+            {name: '20–24 кГц', shift: 20000}
+        ];
+
+        let nodes = [];
+
+        // Создание канала
+        function createChannel(channel) {
+            const node = new AudioWorkletNode(context, 'FrequencyShiftProcessor', {
+                processorOptions: {
+                    shiftFrequency: channel.shift,
+                }
+            });
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = true;
+            checkbox.addEventListener('change', () => {
+                if (checkbox.checked) source.connect(node);
+                else source.disconnect(node);
+            });
+
+            const label = document.createElement('label');
+            label.textContent = ` ${channel.name}`;
+            const div = document.createElement('div');
+            div.className = 'channel';
+            label.prepend(checkbox);
+            div.appendChild(label);
+            channelContainer.appendChild(div);
+
+            const filter = context.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 3000;
+
+            const gain = context.createGain();
+            gain.gain.value = 3; // Усиление
+
+            node.connect(filter).connect(gain).connect(context.destination);
+            return node;
+        }
+
+        // Визуализация
+        function draw() {
+            requestAnimationFrame(draw);
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            canvasCtx.fillStyle = '#121';
+            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+            for (let i = 0; i < bufferLength; i++) {
+                const barHeight = dataArray[i];
+                canvasCtx.fillStyle = `rgb(50, ${barHeight + 100},50)`;
+                canvasCtx.fillRect(i, canvas.height - barHeight, 1, barHeight);
+            }
+        }
+
+        startBtn.addEventListener('click', async () => {
+            try {
+                context = new AudioContext({
+                    latencyHint: "balanced",
+                    sampleRate: 48000
+                });
+
+                // Подключаем Worklet
+                await context.audioWorklet.addModule('worklet.js');
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        sampleRate: 48000
+                    }
+                });
+
+                // Анализатор
+                analyser = context.createAnalyser();
+                analyser.fftSize = 2048;
+
+                canvas.width = analyser.frequencyBinCount;
+
+                source = context.createMediaStreamSource(stream);
+                source.connect(analyser);
+
+                nodes = channels.map(ch => createChannel(ch));
+                nodes.forEach(node => source.connect(node));
+
+                draw(); // Запуск визуализации
+            } catch (err) {
+                console.error("Ошибка:", err);
+            }
+        });
+    </script>
+</body>
+
+</html>
