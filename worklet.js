@@ -1,27 +1,21 @@
 class FrequencyShiftProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    this.shiftFrequency = options.processorOptions.shiftFrequency || 0;
-    this.sampleRate = 44100;
-    this.t = 0;
+    this.phase = 0;
+    this.shiftFrequency = options.processorOptions.shiftFrequency;
   }
-
-  process(inputs, outputs, parameters) {
+  
+  process(inputs, outputs) {
     const input = inputs[0];
     const output = outputs[0];
-
-    for (let channel = 0; channel < input.length; ++channel) {
-      const inputData = input[channel];
-      const outputData = output[channel];
-
-      for (let i = 0; i < inputData.length; ++i) {
-        // Гетеродинирование: умножение на cos(wt)
-        const modulation = Math.cos(2 * Math.PI * this.shiftFrequency * this.t);
-        outputData[i] = inputData[i] * modulation;
-        this.t += 1 / this.sampleRate;
+    const phaseIncrement = (2 * Math.PI * this.shiftFrequency) / sampleRate;
+    
+    for (let channel = 0; channel < input.length; channel++) {
+      for (let i = 0; i < input[channel].length; i++) {
+        output[channel][i] = input[channel][i] * 2 * Math.cos(this.phase);
+        this.phase += phaseIncrement;
       }
     }
-
     return true;
   }
 }
