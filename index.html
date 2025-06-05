@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Audio HF receiver</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Audio HF Receiver</title>
     <style>
         body {
             font-family: sans-serif;
@@ -21,13 +21,30 @@
             width: 100%;
             height: 256px;
             background: #121;
+            display: block;
+            margin-bottom: 12px;
+        }
+
+        button {
+            margin-right: 10px;
+            padding: 8px 16px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        #status {
+            margin-top: 10px;
+            font-style: italic;
+            color: #6f6;
         }
     </style>
 </head>
 
 <body>
-    <h1>Audio HF receiver</h1>
+    <h1>Audio HF Receiver</h1>
     <button id="start">Start</button>
+    <button id="stop" disabled>Stop</button>
+    <div id="status">Stopped</div>
 
     <div id="channels"></div>
 
@@ -35,76 +52,57 @@
     <canvas id="spectrumCanvas2"></canvas>
 
     <script type="module">
-        let context, source, analyser, analyserAfter;
+        let context;
+        let source;
+        let analyser;
+        let analyserAfter;
         let bufferLength;
         let dataArray;
         let dataArrayAfter;
+        let animationId;
 
         const startBtn = document.getElementById('start');
+        const stopBtn = document.getElementById('stop');
+        const statusEl = document.getElementById('status');
         const channelContainer = document.getElementById('channels');
         const canvas = document.getElementById('spectrumCanvas');
         const canvas2 = document.getElementById('spectrumCanvas2');
         const canvasCtx = canvas.getContext('2d');
         const canvasCtx2 = canvas2.getContext('2d');
 
+        // Высота канваса фиксирована, ширина будет установлена после инициализации анализатора
         canvas.height = 256;
         canvas2.height = 256;
 
         const channels = [
-            //{name: '8–11 кГц', shift: 8000},
-            //{name: '11–14 кГц', shift: 11000},
-            {name: '14–17 кГц', shift: 14000},
-            {name: '17–20 кГц', shift: 17000},
-            {name: '20–24 кГц', shift: 20000}
+            {name: '12–15 кГц', shift: 12000},
+            {name: '15–18 кГц', shift: 15000},
+            {name: '18–21 кГц', shift: 18000},
+            {name: '21–24 кГц', shift: 21000}
         ];
 
         let nodes = [];
+        let checkboxes = [];
 
-
+        // Создаём фильтр "Super Brickwall" с 4 HPF и 4 LPF + notch на границах
         function createSuperBrickWallFilter(context, lowFreq, highFreq) {
-            // Highpass часть (4 фильтра)
-            const hp1 = context.createBiquadFilter();
-            hp1.type = "highpass";
-            hp1.frequency.value = lowFreq;
-            hp1.Q.value = 5;
+            const hpFilters = [];
+            const lpFilters = [];
 
-            const hp2 = context.createBiquadFilter();
-            hp2.type = "highpass";
-            hp2.frequency.value = lowFreq;
-            hp2.Q.value = 5;
+            for (let i = 0; i < 4; i++) {
+                const hp = context.createBiquadFilter();
+                hp.type = "highpass";
+                hp.frequency.value = lowFreq;
+                hp.Q.value = 2;
+                hpFilters.push(hp);
 
-            const hp3 = context.createBiquadFilter();
-            hp3.type = "highpass";
-            hp3.frequency.value = lowFreq;
-            hp3.Q.value = 5;
+                const lp = context.createBiquadFilter();
+                lp.type = "lowpass";
+                lp.frequency.value = highFreq;
+                lp.Q.value = 2;
+                lpFilters.push(lp);
+            }
 
-            const hp4 = context.createBiquadFilter();
-            hp4.type = "highpass";
-            hp4.frequency.value = lowFreq;
-            hp4.Q.value = 5;
-
-            // Lowpass часть (4 фильтра)
-            const lp1 = context.createBiquadFilter();
-            lp1.type = "lowpass";
-            lp1.frequency.value = highFreq;
-            lp1.Q.value = 5;
-
-            const lp2 = context.createBiquadFilter();
-            lp2.type = "lowpass";
-            lp2.frequency.value = highFreq;
-            lp2.Q.value = 5;
-
-            const lp3 = context.createBiquadFilter();
-            lp3.type = "lowpass";
-            lp3.frequency.value = highFreq;
-            lp3.Q.value = 5;
-
-            const lp4 = context.createBiquadFilter();
-            lp4.type = "lowpass";
-            lp4.frequency.value = highFreq;
-            lp4.Q.value = 5;
-
-            // Notch фильтры на границах
             const notchLow = context.createBiquadFilter();
             notchLow.type = "notch";
             notchLow.frequency.value = lowFreq - 10;
@@ -115,165 +113,240 @@
             notchHigh.frequency.value = highFreq + 10;
             notchHigh.Q.value = 30;
 
-            // Собираем цепочку
-            hp1.connect(hp2)
-                .connect(hp3)
-                .connect(hp4)
-                .connect(lp1)
-                .connect(lp2)
-                .connect(lp3)
-                .connect(lp4)
-                .connect(notchLow)
-                .connect(notchHigh);
+            // Соединяем фильтры в цепочку: HPF цепочка → LPF цепочка → Notch Low → Notch High
+            for (let i = 0; i < hpFilters.length - 1; i++) {
+                hpFilters[i].connect(hpFilters[i + 1]);
+            }
+            hpFilters[hpFilters.length - 1].connect(lpFilters[0]);
+
+            for (let i = 0; i < lpFilters.length - 1; i++) {
+                lpFilters[i].connect(lpFilters[i + 1]);
+            }
+            lpFilters[lpFilters.length - 1].connect(notchLow);
+            notchLow.connect(notchHigh);
 
             return {
-                input: hp1,
+                input: hpFilters[0],
                 output: notchHigh,
             };
         }
 
-
-        // Создание канала
+        // Создание одного канала с гетеродином и фильтрами
         function createChannel(channel) {
-            const bw1 = createSuperBrickWallFilter(context, channel.shift, channel.shift + 3000);
+            const bwFilter = createSuperBrickWallFilter(context, channel.shift, channel.shift + 3000);
             const lowpass = createSuperBrickWallFilter(context, 0, 3000);
 
-            // 2. Создаем гетеродин (осциллятор для смещения частоты)
+            // Создаём осциллятор для гетеродина
             const oscillator = context.createOscillator();
             oscillator.type = 'sine';
-            oscillator.frequency.value = channel.shift; // На сколько смещаем (16 кГц → 0 Гц)
+            oscillator.frequency.value = channel.shift;
             oscillator.start();
 
-            // 3. Создаем умножитель (гетеродинное преобразование)
+            // Умножитель (модуляция)
             const multiplier = context.createGain();
-            multiplier.gain.value = 2; // Коэффициент усиления
+            multiplier.gain.value = 2;
 
-            bw1.output.connect(multiplier);
+            // Подключаем цепочку: фильтр BW → умножитель
+            bwFilter.output.connect(multiplier);
 
-            // Гетеродин → Умножитель
-            oscillator.connect(multiplier.gain); // Модулируем gain осциллятором
+            // Осциллятор модулирует gain умножителя (гетеродинное смещение)
+            oscillator.connect(multiplier.gain);
 
-            // Умножитель → Фильтр → Выход
-            multiplier.connect(lowpass.input)
-            lowpass.output.connect(analyserAfter).connect(context.destination);
+            // Умножитель → низкочастотный фильтр → анализатор → выход
+            multiplier.connect(lowpass.input);
+            lowpass.output.connect(analyserAfter);
+            analyserAfter.connect(context.destination);
+
+            // Создаём чекбокс для включения/выключения канала
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
+            checkbox.disabled = true; // Активируем после запуска аудио
             checkbox.addEventListener('change', () => {
-                if (checkbox.checked) source.connect(bw1.input);
-                else source.disconnect(bw1.input);
+                if (checkbox.checked) {
+                    source.connect(bwFilter.input);
+                } else {
+                    try {
+                        source.disconnect(bwFilter.input);
+                    } catch { /* Игнорируем ошибки при отключении */}
+                }
             });
 
             const label = document.createElement('label');
             label.textContent = ` ${channel.name}`;
+            label.prepend(checkbox);
+
             const div = document.createElement('div');
             div.className = 'channel';
-            label.prepend(checkbox);
             div.appendChild(label);
             channelContainer.appendChild(div);
 
-            return bw1;
+            checkboxes.push(checkbox);
+
+            return bwFilter;
         }
 
-        // Визуализация
+        // Визуализация спектра
         function draw() {
-            requestAnimationFrame(draw);
+            animationId = requestAnimationFrame(draw);
+
             analyser.getByteFrequencyData(dataArray);
             analyserAfter.getByteFrequencyData(dataArrayAfter);
 
+            // Очистка и отрисовка первого спектра
             canvasCtx.fillStyle = '#121';
             canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
 
+            const barWidth = canvas.width / bufferLength;
+
             for (let i = 0; i < bufferLength; i++) {
                 const barHeight = dataArray[i];
-                canvasCtx.fillStyle = `rgb(50, ${barHeight + 100}, 50)`;
-                canvasCtx.fillRect(i, canvas.height - barHeight, 1, barHeight);
+                const x = i * barWidth;
+                const green = Math.min(barHeight + 100, 255);
+                canvasCtx.fillStyle = `rgb(50, ${green}, 50)`;
+                canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
             }
 
-
+            // Очистка и отрисовка второго спектра
             canvasCtx2.fillStyle = '#121';
             canvasCtx2.fillRect(0, 0, canvas2.width, canvas2.height);
 
             for (let i = 0; i < bufferLength; i++) {
                 const barHeight = dataArrayAfter[i];
-                canvasCtx2.fillStyle = `rgb(50, ${barHeight + 100},50)`;
-                canvasCtx2.fillRect(i, canvas2.height - barHeight, 1, barHeight);
+                const x = i * barWidth;
+                const green = Math.min(barHeight + 100, 255);
+                canvasCtx2.fillStyle = `rgb(50, ${green}, 50)`;
+                canvasCtx2.fillRect(x, canvas2.height - barHeight, barWidth, barHeight);
             }
         }
 
+        // Выбор "лучшего" микрофона
         async function getBestMicrophone() {
             try {
-                // Запрашиваем разрешение на доступ к устройствам
                 const devices = await navigator.mediaDevices.enumerateDevices();
-
-                // Фильтруем только аудиовходные устройства (микрофоны)
-                const microphones = devices.filter(device =>
-                    device.kind === 'audioinput' && device.deviceId !== 'default');
+                const microphones = devices.filter(device => device.kind === 'audioinput' && device.deviceId !== 'default');
 
                 if (microphones.length === 0) {
                     console.warn('Микрофоны не найдены');
                     return null;
                 }
 
-                // Стратегии выбора:
-                // 1. Попробовать найти устройство с "лучшими" характеристиками в имени
                 const preferredNames = ['studio', 'pro', 'external', 'usb', 'hd'];
                 const found = microphones.find(mic =>
-                    preferredNames.some(name => mic.label.toLowerCase().includes(name)));
+                    preferredNames.some(name => mic.label.toLowerCase().includes(name))
+                );
 
                 if (found) return found;
 
-                // 2. Выбрать не-default устройство (часто default - встроенный микрофон)
-                const nonDefault = microphones.find(mic => !mic.label.includes('Default'));
+                const nonDefault = microphones.find(mic => !mic.label.toLowerCase().includes('default'));
                 if (nonDefault) return nonDefault;
 
-                // 3. Вернуть первое доступное
                 return microphones[0];
-
             } catch (error) {
                 console.error('Ошибка при получении устройств:', error);
                 return null;
             }
         }
 
-        startBtn.addEventListener('click', async () => {
+        // Функция запуска аудио
+        async function startAudio() {
             try {
-                context = new AudioContext({
-                    // latencyHint: "balanced",
-                    sampleRate: 48000,
-                });
+                context = new AudioContext({sampleRate: 48000});
+
+                const mic = await getBestMicrophone();
 
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         echoCancellation: false,
                         noiseSuppression: false,
                         sampleRate: 48000,
-                        deviceId: (await getBestMicrophone())?.deviceId,
+                        deviceId: mic?.deviceId || undefined,
                     }
                 });
 
-                // Анализатор
                 analyser = context.createAnalyser();
                 analyser.fftSize = 2048;
                 analyser.minDecibels = -125;
+
                 analyserAfter = context.createAnalyser();
                 analyserAfter.fftSize = 2048;
                 analyserAfter.minDecibels = -125;
 
-                canvas.width = analyser.frequencyBinCount;
-                canvas2.width = analyser.frequencyBinCount;
+                bufferLength = analyser.frequencyBinCount;
+
+                dataArray = new Uint8Array(bufferLength);
+                dataArrayAfter = new Uint8Array(bufferLength);
+
+                canvas.width = bufferLength;
+                canvas2.width = bufferLength;
 
                 source = context.createMediaStreamSource(stream);
                 source.connect(analyser);
 
-                nodes = channels.map(ch => createChannel(ch));
+                // Создаём каналы и чекбоксы
+                nodes = channels.map(createChannel);
 
-                bufferLength = analyser.frequencyBinCount;
-                dataArray = new Uint8Array(bufferLength);
-                dataArrayAfter = new Uint8Array(bufferLength);
+                // Активируем чекбоксы после инициализации
+                checkboxes.forEach(cb => cb.disabled = false);
 
-                draw(); // Запуск визуализации
+                draw();
+
+                // Обновляем UI
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                statusEl.textContent = 'Running...';
+
             } catch (err) {
-                console.error("Ошибка:", err);
+                console.error("Ошибка при запуске аудио:", err);
+                alert('Не удалось запустить аудио: ' + err.message);
+            }
+        }
+
+        // Функция остановки аудио
+        function stopAudio() {
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            if (source) {
+                try {
+                    source.disconnect();
+                } catch { }
+            }
+            if (analyser) {
+                try {
+                    analyser.disconnect();
+                } catch { }
+            }
+            if (analyserAfter) {
+                try {
+                    analyserAfter.disconnect();
+                } catch { }
+            }
+            if (context) {
+                context.close();
+                context = null;
+            }
+
+            // Отключаем все каналы и чекбоксы
+            checkboxes.forEach(cb => {
+                cb.checked = false;
+                cb.disabled = true;
+            });
+
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            statusEl.textContent = 'Stopped';
+        }
+
+        // Обработчики кнопок
+        startBtn.addEventListener('click', startAudio);
+        stopBtn.addEventListener('click', stopAudio);
+
+        // Автоматический ресайз канвасов при изменении размера окна
+        window.addEventListener('resize', () => {
+            if (analyser) {
+                canvas.width = analyser.frequencyBinCount;
+                canvas2.width = analyser.frequencyBinCount;
             }
         });
     </script>
