@@ -57,50 +57,6 @@
 
         let nodes = [];
 
-        function createBrickWallFilter(context, lowFreq, highFreq) {
-            // 1. Highpass фильтр (отсекаем всё ниже lowFreq)
-            const highpass1 = context.createBiquadFilter();
-            highpass1.type = "highpass";
-            highpass1.frequency.value = lowFreq;
-            highpass1.Q.value = 10; // Повышаем добротность для крутого среза
-
-            const highpass2 = context.createBiquadFilter();
-            highpass2.type = "highpass";
-            highpass2.frequency.value = lowFreq;
-            highpass2.Q.value = 10;
-
-            // 2. Lowpass фильтр (отсекаем всё выше highFreq)
-            const lowpass1 = context.createBiquadFilter();
-            lowpass1.type = "lowpass";
-            lowpass1.frequency.value = highFreq;
-            lowpass1.Q.value = 10;
-
-            const lowpass2 = context.createBiquadFilter();
-            lowpass2.type = "lowpass";
-            lowpass2.frequency.value = highFreq;
-            lowpass2.Q.value = 10;
-
-            // 3. Notch фильтры для дополнительного подавления на границах
-            const notchLow = context.createBiquadFilter();
-            notchLow.type = "notch";
-            notchLow.frequency.value = lowFreq - 50; // Чуть ниже нижней границы
-            notchLow.Q.value = 20;
-
-            const notchHigh = context.createBiquadFilter();
-            notchHigh.type = "notch";
-            notchHigh.frequency.value = highFreq + 50; // Чуть выше верхней границы
-            notchHigh.Q.value = 20;
-
-            // Собираем цепочку
-            highpass1.connect(highpass2)
-                .connect(lowpass1)
-                .connect(lowpass2)
-                .connect(notchLow)
-                .connect(notchHigh);
-
-            return highpass1; // Возвращаем входной узел
-        }
-
 
         function createSuperBrickWallFilter(context, lowFreq, highFreq) {
             // Highpass часть (4 фильтра)
@@ -199,7 +155,6 @@
             lowpass.output.connect(context.destination);
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            //checkbox.checked = true;
             checkbox.addEventListener('change', () => {
                 if (checkbox.checked) source.connect(bw1.input);
                 else source.disconnect(bw1.input);
@@ -214,12 +169,6 @@
             channelContainer.appendChild(div);
 
             return bw1;
-
-
-
-
-
-
         }
 
         // Визуализация
@@ -236,7 +185,7 @@
 
             for (let i = 0; i < bufferLength; i++) {
                 const barHeight = dataArray[i];
-                canvasCtx.fillStyle = `rgb(50, ${barHeight + 100},50)`;
+                canvasCtx.fillStyle = `rgb(50, ${barHeight + 100}, 50)`;
                 canvasCtx.fillRect(i, canvas.height - barHeight, 1, barHeight);
             }
 
@@ -293,8 +242,6 @@
                     sampleRate: 48000,
                 });
 
-                // Подключаем Worklet
-                await context.audioWorklet.addModule('worklet.js');
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         echoCancellation: false,
