@@ -36,6 +36,9 @@
 
     <script type="module">
         let context, source, analyser, analyserAfter;
+        let bufferLength;
+        let dataArray;
+        let dataArrayAfter;
 
         const startBtn = document.getElementById('start');
         const channelContainer = document.getElementById('channels');
@@ -152,7 +155,7 @@
 
             // Умножитель → Фильтр → Выход
             multiplier.connect(lowpass.input)
-            lowpass.output.connect(context.destination);
+            lowpass.output.connect(analyserAfter).connect(context.destination);
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.addEventListener('change', () => {
@@ -174,9 +177,6 @@
         // Визуализация
         function draw() {
             requestAnimationFrame(draw);
-            const bufferLength = analyser.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
-            const dataArrayAfter = new Uint8Array(bufferLength);
             analyser.getByteFrequencyData(dataArray);
             analyserAfter.getByteFrequencyData(dataArrayAfter);
 
@@ -247,7 +247,7 @@
                         echoCancellation: false,
                         noiseSuppression: false,
                         sampleRate: 48000,
-                        deviceId: getBestMicrophone().deviceId,
+                        deviceId: (await getBestMicrophone())?.deviceId,
                     }
                 });
 
@@ -266,7 +266,10 @@
                 source.connect(analyser);
 
                 nodes = channels.map(ch => createChannel(ch));
-                //nodes.forEach(node => source.connect(node));
+
+                bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                dataArrayAfter = new Uint8Array(bufferLength);
 
                 draw(); // Запуск визуализации
             } catch (err) {
