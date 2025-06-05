@@ -30,12 +30,25 @@
             padding: 8px 16px;
             font-size: 1rem;
             cursor: pointer;
+            background: #2a2;
+            border: none;
+            color: white;
+            border-radius: 4px;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
         }
 
         #status {
             margin-top: 10px;
             font-style: italic;
             color: #6f6;
+        }
+
+        label {
+            user-select: none;
         }
     </style>
 </head>
@@ -52,14 +65,14 @@
     <canvas id="spectrumCanvas2"></canvas>
 
     <script type="module">
-        let context;
-        let source;
-        let analyser;
-        let analyserAfter;
-        let bufferLength;
-        let dataArray;
-        let dataArrayAfter;
-        let animationId;
+        let context = null;
+        let source = null;
+        let analyser = null;
+        let analyserAfter = null;
+        let bufferLength = 0;
+        let dataArray = null;
+        let dataArrayAfter = null;
+        let animationId = null;
 
         const startBtn = document.getElementById('start');
         const stopBtn = document.getElementById('stop');
@@ -70,21 +83,24 @@
         const canvasCtx = canvas.getContext('2d');
         const canvasCtx2 = canvas2.getContext('2d');
 
-        // Высота канваса фиксирована, ширина будет установлена после инициализации анализатора
         canvas.height = 256;
         canvas2.height = 256;
 
         const channels = [
-            {name: '12–15 кГц', shift: 12000},
-            {name: '15–18 кГц', shift: 15000},
-            {name: '18–21 кГц', shift: 18000},
-            {name: '21–24 кГц', shift: 21000}
+            { name: '12–15 кГц', shift: 12000 },
+            { name: '15–18 кГц', shift: 15000 },
+            { name: '18–21 кГц', shift: 18000 },
+            { name: '21–24 кГц', shift: 21000 }
         ];
 
-        let nodes = [];
-        let checkboxes = [];
+        const checkboxes = [];
+        const nodes = [];
 
-        // Создаём фильтр "Super Brickwall" с 4 HPF и 4 LPF + notch на границах
+        // Определение мобильного устройства
+        function isMobileDevice() {
+            return /android|iphone|ipad|ipod|mobile|blackberry|windows phone/i.test(navigator.userAgent);
+        }
+
         function createSuperBrickWallFilter(context, lowFreq, highFreq) {
             const hpFilters = [];
             const lpFilters = [];
@@ -113,7 +129,6 @@
             notchHigh.frequency.value = highFreq + 10;
             notchHigh.Q.value = 30;
 
-            // Соединяем фильтры в цепочку: HPF цепочка → LPF цепочка → Notch Low → Notch High
             for (let i = 0; i < hpFilters.length - 1; i++) {
                 hpFilters[i].connect(hpFilters[i + 1]);
             }
@@ -125,50 +140,32 @@
             lpFilters[lpFilters.length - 1].connect(notchLow);
             notchLow.connect(notchHigh);
 
-            return {
-                input: hpFilters[0],
-                output: notchHigh,
-            };
+            return { input: hpFilters[0], output: notchHigh };
         }
 
-        // Создание одного канала с гетеродином и фильтрами
         function createChannel(channel) {
             const bwFilter = createSuperBrickWallFilter(context, channel.shift, channel.shift + 3000);
             const lowpass = createSuperBrickWallFilter(context, 0, 3000);
 
-            // Создаём осциллятор для гетеродина
             const oscillator = context.createOscillator();
             oscillator.type = 'sine';
             oscillator.frequency.value = channel.shift;
             oscillator.start();
 
-            // Умножитель (модуляция)
             const multiplier = context.createGain();
             multiplier.gain.value = 2;
 
-            // Подключаем цепочку: фильтр BW → умножитель
             bwFilter.output.connect(multiplier);
-
-            // Осциллятор модулирует gain умножителя (гетеродинное смещение)
             oscillator.connect(multiplier.gain);
-
-            // Умножитель → низкочастотный фильтр → анализатор → выход
             multiplier.connect(lowpass.input);
             lowpass.output.connect(analyserAfter);
             analyserAfter.connect(context.destination);
 
-            // Создаём чекбокс для включения/выключения канала
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            checkbox.disabled = true; // Активируем после запуска аудио
+            checkbox.disabled = true;
             checkbox.addEventListener('change', () => {
-                if (checkbox.checked) {
-                    source.connect(bwFilter.input);
-                } else {
-                    try {
-                        source.disconnect(bwFilter.input);
-                    } catch { /* Игнорируем ошибки при отключении */}
-                }
+                checkbox.checked ? source.connect(bwFilter.input) : source.disconnect(bwFilter.input);
             });
 
             const label = document.createElement('label');
@@ -182,78 +179,73 @@
 
             checkboxes.push(checkbox);
 
-            return bwFilter;
+            return { bwFilter, oscillator, multiplier, lowpass };
         }
 
-        // Визуализация спектра
-        function draw() {
-            animationId = requestAnimationFrame(draw);
-
-            analyser.getByteFrequencyData(dataArray);
-            analyserAfter.getByteFrequencyData(dataArrayAfter);
-
-            // Очистка и отрисовка первого спектра
-            canvasCtx.fillStyle = '#121';
-            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+        // Улучшенная отрисовка с градиентом и пиками
+        function drawSpectrum(dataArray, ctx, canvas) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Градиентный фон
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, 'rgba(0, 150, 0, 0.2)');
+            gradient.addColorStop(1, 'rgba(0, 50, 0, 0.5)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             const barWidth = canvas.width / bufferLength;
+            let maxValue = 0;
 
+            // Рисуем бары
             for (let i = 0; i < bufferLength; i++) {
-                const barHeight = dataArray[i];
-                const x = i * barWidth;
-                const green = Math.min(barHeight + 100, 255);
-                canvasCtx.fillStyle = `rgb(50, ${green}, 50)`;
-                canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                const value = dataArray[i];
+                const height = value * 1.5;
+                
+                // Градиент для баров
+                const barGradient = ctx.createLinearGradient(0, canvas.height - height, 0, canvas.height);
+                barGradient.addColorStop(0, '#0f0');
+                barGradient.addColorStop(0.7, '#ff0');
+                barGradient.addColorStop(1, '#f00');
+                
+                ctx.fillStyle = barGradient;
+                ctx.fillRect(i * barWidth, canvas.height - height, barWidth, height);
+
+                if (value > maxValue) maxValue = value;
             }
 
-            // Очистка и отрисовка второго спектра
-            canvasCtx2.fillStyle = '#121';
-            canvasCtx2.fillRect(0, 0, canvas2.width, canvas2.height);
-
-            for (let i = 0; i < bufferLength; i++) {
-                const barHeight = dataArrayAfter[i];
-                const x = i * barWidth;
-                const green = Math.min(barHeight + 100, 255);
-                canvasCtx2.fillStyle = `rgb(50, ${green}, 50)`;
-                canvasCtx2.fillRect(x, canvas2.height - barHeight, barWidth, barHeight);
-            }
+            // Рисуем пиковую линию
+            ctx.strokeStyle = '#fff';
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height - maxValue * 1.5);
+            ctx.lineTo(canvas.width, canvas.height - maxValue * 1.5);
+            ctx.stroke();
         }
 
-        // Выбор "лучшего" микрофона
         async function getBestMicrophone() {
             try {
                 const devices = await navigator.mediaDevices.enumerateDevices();
-                const microphones = devices.filter(device => device.kind === 'audioinput' && device.deviceId !== 'default');
-
-                if (microphones.length === 0) {
-                    console.warn('Микрофоны не найдены');
-                    return null;
-                }
-
-                const preferredNames = ['studio', 'pro', 'external', 'usb', 'hd'];
-                const found = microphones.find(mic =>
-                    preferredNames.some(name => mic.label.toLowerCase().includes(name))
-                );
-
-                if (found) return found;
-
-                const nonDefault = microphones.find(mic => !mic.label.toLowerCase().includes('default'));
-                if (nonDefault) return nonDefault;
-
-                return microphones[0];
+                const microphones = devices.filter(d => d.kind === 'audioinput' && d.deviceId !== 'default');
+                
+                const preferred = ['studio', 'pro', 'external', 'usb', 'hd'];
+                return microphones.find(mic => preferred.some(p => mic.label.toLowerCase().includes(p))) 
+                    || microphones[0];
             } catch (error) {
-                console.error('Ошибка при получении устройств:', error);
+                console.error('Ошибка получения устройств:', error);
                 return null;
             }
         }
 
-        // Функция запуска аудио
         async function startAudio() {
+            if (context) return;
+
             try {
-                context = new AudioContext({sampleRate: 48000});
+                statusEl.textContent = 'Initializing...';
+                startBtn.disabled = true;
+
+                context = new AudioContext({ sampleRate: 48000 });
+                const fftSize = isMobileDevice() ? 1024 : 2048;
 
                 const mic = await getBestMicrophone();
-
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         echoCancellation: false,
@@ -264,15 +256,14 @@
                 });
 
                 analyser = context.createAnalyser();
-                analyser.fftSize = 2048;
+                analyser.fftSize = fftSize;
                 analyser.minDecibels = -125;
 
                 analyserAfter = context.createAnalyser();
-                analyserAfter.fftSize = 2048;
+                analyserAfter.fftSize = fftSize;
                 analyserAfter.minDecibels = -125;
 
                 bufferLength = analyser.frequencyBinCount;
-
                 dataArray = new Uint8Array(bufferLength);
                 dataArrayAfter = new Uint8Array(bufferLength);
 
@@ -282,67 +273,66 @@
                 source = context.createMediaStreamSource(stream);
                 source.connect(analyser);
 
-                // Создаём каналы и чекбоксы
-                nodes = channels.map(createChannel);
+                channelContainer.innerHTML = '';
+                checkboxes.length = 0;
+                nodes.length = 0;
 
-                // Активируем чекбоксы после инициализации
+                channels.forEach(channel => nodes.push(createChannel(channel)));
                 checkboxes.forEach(cb => cb.disabled = false);
 
-                draw();
+                function render() {
+                    animationId = requestAnimationFrame(render);
+                    
+                    analyser.getByteFrequencyData(dataArray);
+                    analyserAfter.getByteFrequencyData(dataArrayAfter);
 
-                // Обновляем UI
-                startBtn.disabled = true;
-                stopBtn.disabled = false;
+                    drawSpectrum(dataArray, canvasCtx, canvas);
+                    drawSpectrum(dataArrayAfter, canvasCtx2, canvas2);
+                }
+                render();
+
                 statusEl.textContent = 'Running...';
+                stopBtn.disabled = false;
 
             } catch (err) {
-                console.error("Ошибка при запуске аудио:", err);
-                alert('Не удалось запустить аудио: ' + err.message);
+                console.error("Ошибка запуска:", err);
+                statusEl.textContent = `Error: ${err.message}`;
+                startBtn.disabled = false;
+                
+                if (err.name === 'NotAllowedError') {
+                    alert('Требуется разрешение на использование микрофона!');
+                }
             }
         }
 
-        // Функция остановки аудио
         function stopAudio() {
-            if (animationId) {
-                cancelAnimationFrame(animationId);
-                animationId = null;
-            }
-            if (source) {
-                try {
-                    source.disconnect();
-                } catch { }
-            }
-            if (analyser) {
-                try {
-                    analyser.disconnect();
-                } catch { }
-            }
-            if (analyserAfter) {
-                try {
-                    analyserAfter.disconnect();
-                } catch { }
-            }
-            if (context) {
-                context.close();
-                context = null;
-            }
+            cancelAnimationFrame(animationId);
+            
+            [source, analyser, analyserAfter, context].forEach(node => {
+                if (node) try { node.disconnect(); } catch {}
+                if (node instanceof AudioContext) node.close();
+            });
 
-            // Отключаем все каналы и чекбоксы
+            context = null;
             checkboxes.forEach(cb => {
                 cb.checked = false;
                 cb.disabled = true;
             });
 
+            channelContainer.innerHTML = '';
             startBtn.disabled = false;
             stopBtn.disabled = true;
             statusEl.textContent = 'Stopped';
+
+            // Очистка канвасов
+            canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+            canvasCtx2.clearRect(0, 0, canvas2.width, canvas2.height);
         }
 
-        // Обработчики кнопок
         startBtn.addEventListener('click', startAudio);
         stopBtn.addEventListener('click', stopAudio);
 
-        // Автоматический ресайз канвасов при изменении размера окна
+        // Автоматический ресайз для мобильных устройств
         window.addEventListener('resize', () => {
             if (analyser) {
                 canvas.width = analyser.frequencyBinCount;
@@ -353,3 +343,4 @@
 </body>
 
 </html>
+
