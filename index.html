@@ -93,7 +93,8 @@
             {name: '12–15 кГц', shift: 12000},
             {name: '15–18 кГц', shift: 15000},
             {name: '18–21 кГц', shift: 18000},
-            {name: '21–24 кГц', shift: 21000}
+            {name: '21–24 кГц', shift: 21000},
+            {name: '24-27 кГц', shift: 24000},
         ];
 
         const checkboxes = [];
@@ -229,16 +230,17 @@
                 statusEl.textContent = 'Initializing...';
                 startBtn.disabled = true;
 
-                context = new AudioContext({sampleRate: 48000});
+                context = new AudioContext({sampleRate: 48000 * 2});
+                console.log(context.sampleRate);
                 const fftSize = isMobileDevice() ? 1024 : 2048;
 
                 const mic = await getBestMicrophone();
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        sampleRate: 48000,
-                        deviceId: mic?.deviceId || undefined,
+                        // echoCancellation: false,
+                        // noiseSuppression: false,
+                        sampleRate: 48000 * 2,
+                        // deviceId: mic?.deviceId || undefined,
                     }
                 });
 
@@ -251,6 +253,10 @@
 
                 spectrum = new Spectrum(spectrumCanvas, dataArray, 0, 255);
                 waterfall = new Waterfall(waterfallCanvas, dataArray, 0, 255);
+
+                for (let i = 24000; i < 100000; i += 24000) {
+                    spectrum.addBw(f2x(i), f2x(i));
+                }
 
                 source = context.createMediaStreamSource(stream);
                 source.connect(analyser);
