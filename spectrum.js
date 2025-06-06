@@ -21,7 +21,7 @@ export default class Spectrum {
         this.onResize();
         console.log("Spectrum init");
 
-        this.bws = [];
+        this.bws = {};
     }
 
     addBw(start, end) {

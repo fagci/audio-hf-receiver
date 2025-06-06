@@ -55,6 +55,18 @@
 
 <body>
     <h1>Audio HF Receiver</h1>
+
+    <select id="sampleRateSelect">
+        <option disabled selected>-- выберите --</option>
+        <option value="44100">44.1 kHz (стандартный)</option>
+        <option value="48000">48 kHz (рекомендуемый)</option>
+        <option value="96000">96 kHz (высокий)</option>
+    </select>
+
+    <select id="audioDeviceSelect">
+        <option value="">Default microphone</option>
+    </select>
+
     <button id="start">Start</button>
     <button id="stop" disabled>Stop</button>
     <div id="status">Stopped</div>
@@ -64,10 +76,36 @@
     <canvas id="spectrumCanvas"></canvas>
     <canvas id="waterfallCanvas"></canvas>
 
+    <script type="module" src="audio-context-manager.js"></script>
+    <script type="module" src="audio-input-manager.js"></script>
+
     <script type="module" src="spectrum.js"></script>
     <script type="module" src="waterfall.js"></script>
 
     <script type="module">
+        import AudioSystem from './audio-system.js'
+        const audioSystem = new AudioSystem();
+
+        async function initAudio() {
+            const sampleRateSelect = document.getElementById("sampleRateSelect");
+            const selectedRate = parseInt(sampleRateSelect.value);
+            const devices = await audioSystem.init(selectedRate);
+
+            const select = document.getElementById("audioDeviceSelect");
+            select.innerHTML = '';
+
+            console.log(devices);
+
+            devices.forEach(device => {
+                const option = document.createElement("option");
+                option.value = device.deviceId;
+                option.text = device.label || `Microphone ${select.options.length}`;
+                select.appendChild(option);
+            });
+        }
+
+        sampleRateSelect.addEventListener('change', initAudio);
+
         let context = null;
         let source = null;
         let analyser = null;
@@ -110,7 +148,7 @@
         }
 
         function f2x(f) {
-            return f / (context.sampleRate / (dataArray.length * 2))
+            return f * dataArray.length * 2 / context.sampleRate;
         }
 
 
@@ -225,24 +263,16 @@
 
         async function startAudio() {
             if (context) return;
+            const select = document.getElementById("audioDeviceSelect");
 
             try {
+                source = await audioSystem.setInputDevice(select.value);
+                console.warn(source);
+                context = audioSystem.audioContextManager.getContext();
                 statusEl.textContent = 'Initializing...';
                 startBtn.disabled = true;
 
-                context = new AudioContext({sampleRate: 48000 * 2});
-                console.log(context.sampleRate);
                 const fftSize = isMobileDevice() ? 1024 : 2048;
-
-                const mic = await getBestMicrophone();
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        // echoCancellation: false,
-                        // noiseSuppression: false,
-                        sampleRate: 48000 * 2,
-                        // deviceId: mic?.deviceId || undefined,
-                    }
-                });
 
                 analyser = context.createAnalyser();
                 analyser.fftSize = fftSize;
@@ -258,7 +288,6 @@
                     spectrum.addBw(f2x(i), f2x(i));
                 }
 
-                source = context.createMediaStreamSource(stream);
                 source.connect(analyser);
 
                 channelContainer.innerHTML = '';
