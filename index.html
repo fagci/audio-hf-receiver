@@ -58,9 +58,21 @@
 
     <select id="sampleRateSelect">
         <option disabled selected>-- выберите --</option>
-        <option value="44100">44.1 kHz (стандартный)</option>
-        <option value="48000">48 kHz (рекомендуемый)</option>
-        <option value="96000">96 kHz (высокий)</option>
+        <!-- Низкие частоты (голос, телефония) -->
+        <option value="8000">8 kHz - телефонная связь, рации</option>
+        <option value="16000">16 kHz - VoIP, голосовые помощники</option>
+        <option value="22050">22.05 kHz - старые MP3, мультимедиа 90-х</option>
+
+        <!-- Стандартные частоты -->
+        <option value="32000">32 kHz - радиовещание, некоторые подкасты</option>
+        <option value="44100">44.1 kHz - CD-аудио, музыка (стандарт)</option>
+        <option value="48000">48 kHz - видео (DVD/Blu-ray), игры, веб (рекомендуемый)</option>
+
+        <!-- Hi-Res аудио -->
+        <option value="88200">88.2 kHz - профессиональная запись (пересчёт для 44.1k)</option>
+        <option value="96000">96 kHz - Hi-Res аудио, студийная работа</option>
+        <option value="176400">176.4 kHz - профессиональные DAW</option>
+        <option value="192000">192 kHz - максимальное качество (аудиофильские записи)</option>
     </select>
 
     <select id="audioDeviceSelect">
@@ -100,7 +112,11 @@
                 const option = document.createElement("option");
                 option.value = device.deviceId;
                 option.text = device.label || `Microphone ${select.options.length}`;
-                select.appendChild(option);
+                const c = device.getCapabilities();
+                option.text += ` ${(c.sampleRate.min / 1000).toFixed(0)}..${(c.sampleRate.max / 1000).toFixed(0)}kHz`;
+                if (selectedRate >= c.sampleRate.min && selectedRate <= c.sampleRate.max) {
+                    select.appendChild(option);
+                }
             });
         }
 
@@ -128,11 +144,6 @@
         let waterfall;
 
         const channels = [
-            {name: '12–15 кГц', shift: 12000},
-            {name: '15–18 кГц', shift: 15000},
-            {name: '18–21 кГц', shift: 18000},
-            {name: '21–24 кГц', shift: 21000},
-            {name: '24-27 кГц', shift: 24000},
         ];
 
         const checkboxes = [];
@@ -236,20 +247,6 @@
             return {bwFilter, oscillator, multiplier, lowpass};
         }
 
-        async function getBestMicrophone() {
-            try {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const microphones = devices.filter(d => d.kind === 'audioinput' && d.deviceId !== 'default');
-
-                const preferred = ['studio', 'pro', 'external', 'usb', 'hd'];
-                return microphones.find(mic => preferred.some(p => mic.label.toLowerCase().includes(p)))
-                    || microphones[0];
-            } catch (error) {
-                console.error('Ошибка получения устройств:', error);
-                return null;
-            }
-        }
-
         function render() {
             requestAnimationFrame(render);
             analyser.getByteFrequencyData(dataArray);
@@ -283,6 +280,10 @@
 
                 spectrum = new Spectrum(spectrumCanvas, dataArray, 0, 255);
                 waterfall = new Waterfall(waterfallCanvas, dataArray, 0, 255);
+                channels.length = 0;
+                for (let i = 6000; i < context.sampleRate / 2; i += 3000) {
+                    channels.push({name: `${(i / 1000).toFixed(0)}kHz`, shift: i});
+                }
 
                 for (let i = 24000; i < 100000; i += 24000) {
                     spectrum.addBw(f2x(i), f2x(i));
