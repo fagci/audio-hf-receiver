@@ -47,9 +47,26 @@ export default class Spectrum {
 
     render() {
         if (!this.updated) return;
+        this.ct.clearRect(0, 0, this.cv.width, this.cv.height);
+
+        this.ct.strokeStyle = "red";
+        this.ct.fillStyle = "rgba(255,0,0,0.25)";
+        Object.values(this.bws).forEach(bw => {
+            this.ct.beginPath();
+            this.ct.moveTo(bw.start, 0);
+            this.ct.lineTo(bw.start, this.cv.height);
+            this.ct.stroke();
+
+            this.ct.beginPath();
+            this.ct.moveTo(bw.end, 0);
+            this.ct.lineTo(bw.end, this.cv.height);
+            this.ct.stroke();
+
+            this.ct.fillRect(bw.start, 0, bw.end - bw.start, this.cv.height);
+        });
+
         this.ct.strokeStyle = "yellow";
         this.ct.beginPath();
-        this.ct.clearRect(0, 0, this.cv.width, this.cv.height);
         for (let x = 0; x < this.cv.width; ++x) {
             this.ct.lineTo(
                 x,
@@ -58,20 +75,6 @@ export default class Spectrum {
         }
         this.ct.stroke();
 
-        this.ct.strokeStyle = "red";
-        this.ct.fillStyle = "rgba(255,0,0,0.33)";
-        this.ct.beginPath();
-        Object.values(this.bws).forEach(bw => {
-            this.ct.moveTo(bw.start, 0);
-            this.ct.lineTo(bw.start, this.cv.height);
-            this.ct.stroke();
-
-            this.ct.moveTo(bw.end, 0);
-            this.ct.lineTo(bw.end, this.cv.height);
-            this.ct.stroke();
-
-            this.ct.fillRect(bw.start, 0, bw.end - bw.start, this.cv.height);
-        });
 
         this.updated = false;
     }
