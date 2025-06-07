@@ -114,9 +114,9 @@
                 option.text = device.label || `Microphone ${select.options.length}`;
                 const c = device.getCapabilities();
                 option.text += ` ${(c.sampleRate.min / 1000).toFixed(0)}..${(c.sampleRate.max / 1000).toFixed(0)}kHz`;
-                if (selectedRate >= c.sampleRate.min && selectedRate <= c.sampleRate.max) {
+                //if (selectedRate >= c.sampleRate.min && selectedRate <= c.sampleRate.max) {
                     select.appendChild(option);
-                }
+                //}
             });
         }
 
@@ -143,8 +143,7 @@
         let spectrum;
         let waterfall;
 
-        const channels = [
-        ];
+        const channels = [];
 
         const checkboxes = [];
         const nodes = [];
