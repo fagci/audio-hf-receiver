@@ -1,6 +1,6 @@
 // Базовый класс для визуализаций
 class FrequencyVisualizer {
-    constructor(canvas, minDecibels, maxDecibels, sampleRate = 48000) {
+    constructor(canvas, minDecibels, maxDecibels, sampleRate = 48000, frequencyScale = 'log') {
         this.canvas = canvas;
         this.ctx = canvas.getContext("2d");
 
@@ -9,7 +9,7 @@ class FrequencyVisualizer {
         this.decibelRange = maxDecibels - minDecibels;
 
         this.sampleRate = sampleRate;
-        this.frequencyScale = 'log'; // 'log' или 'linear'
+        this.frequencyScale = frequencyScale; // 'log' или 'linear'
         this.colors = {
             background: '#121212',
             grid: 'rgba(255,255,255,0.1)',
@@ -66,12 +66,21 @@ class FrequencyVisualizer {
         this.canvas.width = bb.width;
         this.canvas.height = bb.height;
     }
+
+    update(data = null) {
+        if (data) this.data = data;
+
+        for (let i = 0; i < this.data.length; i++) {
+            this.levels[i] = this.data[i];
+        }
+        this.updated = true;
+    }
 }
 
 // Класс Waterfall с наследованием
 export class Waterfall extends FrequencyVisualizer {
-    constructor(canvas, data, minDecibels = 0, maxDecibels = 65535, palette = ["#000000", "#0000FF", "#00FFFF", "#FFFF00", "#FFFFFF"], sampleRate = 48000) {
-        super(canvas, minDecibels, maxDecibels, sampleRate);
+    constructor(canvas, data, minDecibels, maxDecibels, sampleRate, frequencyScale, palette = ["#000000", "#0000FF", "#00FFFF", "#FFFF00", "#FFFFFF"]) {
+        super(canvas, minDecibels, maxDecibels, sampleRate, frequencyScale);
 
         this.data = data;
         this.levels = new Uint8Array(data.length);
@@ -90,21 +99,6 @@ export class Waterfall extends FrequencyVisualizer {
         this.imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     }
 
-    // Обновленные методы с учетом частотной шкалы
-    update(data = null) {
-        if (data) this.data = data;
-
-        for (let i = 0; i < this.data.length; i++) {
-            this.levels[i] = this.remap(
-                this.data[i],
-                this.minDecibels,
-                this.maxDecibels,
-                0,
-                255
-            );
-        }
-        this.updated = true;
-    }
 
     render() {
         if (!this.updated || !this.imageData) return;
@@ -120,10 +114,10 @@ export class Waterfall extends FrequencyVisualizer {
         pixels.copyWithin(rowSize, 0, pixels.length - rowSize);
 
         // Заполняем новую строку с учетом частотной шкалы
-        /* for (let x = 0; x < width; x++) {
+        for (let x = 0; x < width; x++) {
             const freq = this.xToFrequency(x);
-            const dataIndex = Math.floor((freq / (sampleRate / 2)) * data.length);
-            const level = this.levels[Math.min(dataIndex, data.length - 1)];
+            const dataIndex = Math.floor((freq / (this.sampleRate / 2)) * length);
+            const level = this.levels[Math.min(dataIndex, length - 1)];
 
             const [r, g, b] = this.colors[level];
             const idx = x * 4;
@@ -131,47 +125,11 @@ export class Waterfall extends FrequencyVisualizer {
             pixels[idx + 1] = g;
             pixels[idx + 2] = b;
             pixels[idx + 3] = 255;
-        } */
-
-
-        const firstFreq = this.frequencyScale === 'log' ? 20 : 0; // Для логарифма начинаем с 20 Гц
-        let ox = this.frequencyToX(firstFreq) | 0;
-
-        // Оптимизация: рисуем только каждый N-ый пиксель
-        const stride = Math.max(1, Math.floor(length / (width * 2)));
-
-        // Рисуем спектр с учетом выбранной шкалы
-        for (let i = stride; i < length; i += stride) {
-            // Рассчитываем частоту для текущей точки
-            const freq = (i / length) * (this.sampleRate / 2);
-
-            // Пропускаем частоты ниже 20 Гц в логарифмическом режиме
-            if (this.frequencyScale === 'log' && freq < 20) continue;
-
-            const xe = this.frequencyToX(freq) | 0;
-            const level = this.remap(this.valueToDecibels(levels[i]), minDecibels, maxDecibels, 0, 255);
-            const [r, g, b] = colors[level];
-
-            for (let x = ox; x < xe; ++x) {
-                const idx = x * 4;
-                pixels[idx] = r;
-                pixels[idx + 1] = g;
-                pixels[idx + 2] = b;
-                pixels[idx + 3] = 255;
-            }
-            ox = xe;
         }
-
-
-
-
-
-
 
         this.ctx.putImageData(this.imageData, 0, 0);
         this.updated = false;
     }
-
 
     setPalette(palette) {
         const canvas = document.createElement("canvas");
@@ -206,8 +164,8 @@ export class Waterfall extends FrequencyVisualizer {
 
 
 export class Spectrum extends FrequencyVisualizer {
-    constructor(canvas, data, minDecibels, maxDecibels, sampleRate) {
-        super(canvas, minDecibels, maxDecibels, sampleRate);
+    constructor(canvas, data, minDecibels, maxDecibels, sampleRate, frequencyScale) {
+        super(canvas, minDecibels, maxDecibels, sampleRate, frequencyScale);
 
         this.data = data;
         this.levels = new Uint8Array(data.length);
@@ -318,15 +276,6 @@ export class Spectrum extends FrequencyVisualizer {
         delete this.bands[`${start},${end}`];
     }
 
-    update(data = null) {
-        if (data) this.data = data;
-
-        for (let i = 0; i < this.data.length; i++) {
-            this.levels[i] = this.data[i];
-        }
-        this.updated = true;
-    }
-
     render() {
         if (!this.updated) return;
 
@@ -363,6 +312,9 @@ export class Spectrum extends FrequencyVisualizer {
 
             // Градиент для зоны (более красивый эффект)
             const gradient = ctx.createLinearGradient(startX, 0, endX, 0);
+            if (!band.color) {
+                band.color = '#ff0000';
+            }
             gradient.addColorStop(0, `${band.color}40`);
             gradient.addColorStop(0.5, `${band.color}20`);
             gradient.addColorStop(1, `${band.color}40`);

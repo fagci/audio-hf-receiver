@@ -14,7 +14,8 @@
         }
 
         .channel {
-            margin-bottom: 10px;
+            margin: 8px 16px;
+            display: inline-block;
         }
 
         canvas {
@@ -57,26 +58,28 @@
     <h1>Audio HF Receiver</h1>
 
     <select id="sampleRateSelect">
-        <option disabled selected>-- выберите --</option>
-        <!-- Низкие частоты (голос, телефония) -->
-        <option value="8000">8 kHz - телефонная связь, рации</option>
-        <option value="16000">16 kHz - VoIP, голосовые помощники</option>
-        <option value="22050">22.05 kHz - старые MP3, мультимедиа 90-х</option>
+        <option disabled selected>-- select --</option>
+        <option value="8000">8 kHz - phone</option>
+        <option value="16000">16 kHz - VoIP</option>
+        <option value="22050">22.05 kHz - old MP3</option>
 
-        <!-- Стандартные частоты -->
-        <option value="32000">32 kHz - радиовещание, некоторые подкасты</option>
-        <option value="44100">44.1 kHz - CD-аудио, музыка (стандарт)</option>
-        <option value="48000">48 kHz - видео (DVD/Blu-ray), игры, веб (рекомендуемый)</option>
+        <option value="32000">32 kHz - radio</option>
+        <option value="44100">44.1 kHz (standard)</option>
+        <option value="48000">48 kHz (recommended)</option>
 
-        <!-- Hi-Res аудио -->
-        <option value="88200">88.2 kHz - профессиональная запись (пересчёт для 44.1k)</option>
-        <option value="96000">96 kHz - Hi-Res аудио, студийная работа</option>
-        <option value="176400">176.4 kHz - профессиональные DAW</option>
-        <option value="192000">192 kHz - максимальное качество (аудиофильские записи)</option>
+        <option value="88200">88.2 kHz - pro</option>
+        <option value="96000">96 kHz - Hi-Res</option>
+        <option value="176400">176.4 kHz - pro DAW</option>
+        <option value="192000">192 kHz (max)</option>
     </select>
 
     <select id="audioDeviceSelect">
         <option value="">Default microphone</option>
+    </select>
+
+    <select id="scaleSelect">
+        <option value="log">Log</option>
+        <option value="linear">Linear</option>
     </select>
 
     <button id="start">Start</button>
@@ -97,8 +100,10 @@
         import AudioSystem from './audio-system.js'
         const audioSystem = new AudioSystem();
 
+        const sampleRateSelect = document.getElementById("sampleRateSelect");
+        const scaleSelect = document.getElementById("scaleSelect");
+
         async function initAudio() {
-            const sampleRateSelect = document.getElementById("sampleRateSelect");
             const selectedRate = parseInt(sampleRateSelect.value);
             const devices = await audioSystem.init(selectedRate);
 
@@ -275,8 +280,8 @@
 
                 dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-                spectrum = new Spectrum(spectrumCanvas, dataArray, analyser.minDecibels, analyser.maxDecibels, context.sampleRate);
-                waterfall = new Waterfall(waterfallCanvas, dataArray, 0, 255);
+                spectrum = new Spectrum(spectrumCanvas, dataArray, analyser.minDecibels, analyser.maxDecibels, context.sampleRate, scaleSelect.value);
+                waterfall = new Waterfall(waterfallCanvas, dataArray, analyser.minDecibels, analyser.maxDecibels, context.sampleRate, scaleSelect.value);
                 channels.length = 0;
                 for (let i = 6000; i < context.sampleRate / 2; i += 3000) {
                     channels.push({name: `${(i / 1000).toFixed(0)}kHz`, shift: i});
