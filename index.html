@@ -226,8 +226,8 @@
             checkbox.disabled = true;
             checkbox.addEventListener('change', () => {
                 checkbox.checked ? source.connect(bwFilter.input) : source.disconnect(bwFilter.input);
-                const sx = f2x(channel.shift);
-                const ex = f2x(channel.shift + 3000);
+                const sx = channel.shift;
+                const ex = channel.shift + 3000;
 
                 checkbox.checked ? spectrum.addBand(sx, ex) : spectrum.removeBand(sx, ex);
             });
@@ -277,15 +277,11 @@
 
                 dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-                spectrum = new Spectrum(spectrumCanvas, dataArray, analyser.minDecibels, analyser.maxDecibels);
+                spectrum = new Spectrum(spectrumCanvas, dataArray, analyser.minDecibels, analyser.maxDecibels, context.sampleRate);
                 waterfall = new Waterfall(waterfallCanvas, dataArray, 0, 255);
                 channels.length = 0;
                 for (let i = 6000; i < context.sampleRate / 2; i += 3000) {
                     channels.push({name: `${(i / 1000).toFixed(0)}kHz`, shift: i});
-                }
-
-                for (let i = 24000; i < 100000; i += 24000) {
-                    spectrum.addBand(f2x(i), f2x(i));
                 }
 
                 source.connect(analyser);
