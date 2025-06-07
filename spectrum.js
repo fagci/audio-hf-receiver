@@ -39,8 +39,6 @@ export default class EnhancedSpectrum {
 
     drawDecibelScale() {
         const { ctx, canvas, minDecibels, maxDecibels } = this;
-        const steps = 5;
-        const step = (maxDecibels - minDecibels) / steps;
 
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
@@ -48,9 +46,8 @@ export default class EnhancedSpectrum {
         ctx.fillStyle = this.colors.scaleText;
         ctx.font = '10px Arial';
 
-        for (let i = 0; i <= steps; i++) {
-            const db = minDecibels + (i * step);
-            const y = canvas.height - (i * (canvas.height / steps));
+        for (let db = minDecibels; db <= maxDecibels; db += 10) {
+            const y = canvas.height - this.decibelsToValue(db);
 
             ctx.beginPath();
             ctx.moveTo(0, y);
