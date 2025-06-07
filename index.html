@@ -115,7 +115,7 @@
                 const c = device.getCapabilities();
                 option.text += ` ${(c.sampleRate.min / 1000).toFixed(0)}..${(c.sampleRate.max / 1000).toFixed(0)}kHz`;
                 //if (selectedRate >= c.sampleRate.min && selectedRate <= c.sampleRate.max) {
-                    select.appendChild(option);
+                select.appendChild(option);
                 //}
             });
         }
@@ -229,7 +229,7 @@
                 const sx = f2x(channel.shift);
                 const ex = f2x(channel.shift + 3000);
 
-                checkbox.checked ? spectrum.addBw(sx, ex) : spectrum.removeBw(sx, ex);
+                checkbox.checked ? spectrum.addBand(sx, ex) : spectrum.removeBand(sx, ex);
             });
 
             const label = document.createElement('label');
@@ -277,7 +277,7 @@
 
                 dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-                spectrum = new Spectrum(spectrumCanvas, dataArray, 0, 255);
+                spectrum = new Spectrum(spectrumCanvas, dataArray, analyser.minDecibels, analyser.maxDecibels);
                 waterfall = new Waterfall(waterfallCanvas, dataArray, 0, 255);
                 channels.length = 0;
                 for (let i = 6000; i < context.sampleRate / 2; i += 3000) {
@@ -285,7 +285,7 @@
                 }
 
                 for (let i = 24000; i < 100000; i += 24000) {
-                    spectrum.addBw(f2x(i), f2x(i));
+                    spectrum.addBand(f2x(i), f2x(i));
                 }
 
                 source.connect(analyser);
