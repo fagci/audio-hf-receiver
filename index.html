@@ -91,8 +91,7 @@
     <script type="module" src="audio-context-manager.js"></script>
     <script type="module" src="audio-input-manager.js"></script>
 
-    <script type="module" src="spectrum.js"></script>
-    <script type="module" src="waterfall.js"></script>
+    <script type="module" src="frequency-visualizer.js"></script>
 
     <script type="module">
         import AudioSystem from './audio-system.js'
@@ -129,8 +128,7 @@
         let dataArray;
         let animationId = null;
 
-        import Spectrum from './spectrum.js'
-        import Waterfall from './waterfall.js'
+        import {Spectrum, Waterfall} from './frequency-visualizer.js'
 
         const startBtn = document.getElementById('start');
         const stopBtn = document.getElementById('stop');
