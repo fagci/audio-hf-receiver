@@ -1,8 +1,13 @@
 // Базовый класс для визуализаций
 class FrequencyVisualizer {
-    constructor(canvas, sampleRate = 48000) {
+    constructor(canvas, minDecibels, maxDecibels, sampleRate = 48000) {
         this.canvas = canvas;
         this.ctx = canvas.getContext("2d");
+
+        this.minDecibels = minDecibels;
+        this.maxDecibels = maxDecibels;
+        this.decibelRange = maxDecibels - minDecibels;
+
         this.sampleRate = sampleRate;
         this.frequencyScale = 'log'; // 'log' или 'linear'
         this.colors = {
@@ -13,6 +18,12 @@ class FrequencyVisualizer {
         };
     }
 
+    remap(x, srcMin, srcMax, dstMin, dstMax) {
+        if (srcMax === srcMin) return dstMin;
+        x = Math.max(srcMin, Math.min(x, srcMax));
+        return dstMin + ((x - srcMin) * (dstMax - dstMin)) / (srcMax - srcMin);
+    }
+
     // Преобразование частоты в координату X
     frequencyToX(freq) {
         const maxFreq = this.sampleRate / 2;
@@ -21,7 +32,7 @@ class FrequencyVisualizer {
             const logMin = Math.log10(20);
             const logMax = Math.log10(maxFreq);
             const logFreq = Math.log10(Math.max(20, freq));
-            return ((logFreq - logMin) / (logMax - logMin)) * this.canvas.width;
+            return this.remap(logFreq, logMin, logMax, 0, this.canvas.width);
         }
         return (freq / maxFreq) * this.canvas.width;
     }
@@ -39,6 +50,16 @@ class FrequencyVisualizer {
         return normalizedX * maxFreq;
     }
 
+    // Преобразование значения в децибелы
+    valueToDecibels(value) {
+        return this.minDecibels + (value / 255) * this.decibelRange;
+    }
+
+    // Преобразование децибел в значение
+    decibelsToValue(db) {
+        return ((db - this.minDecibels) / this.decibelRange) * 255;
+    }
+
     // Общие методы для ресайза
     onResize() {
         const bb = this.canvas.getBoundingClientRect();
@@ -49,13 +70,11 @@ class FrequencyVisualizer {
 
 // Класс Waterfall с наследованием
 export class Waterfall extends FrequencyVisualizer {
-    constructor(canvas, data, minValue = 0, maxValue = 65535, palette = ["#000000", "#0000FF", "#00FFFF", "#FFFF00", "#FFFFFF"], sampleRate = 48000) {
-        super(canvas, sampleRate);
+    constructor(canvas, data, minDecibels = 0, maxDecibels = 65535, palette = ["#000000", "#0000FF", "#00FFFF", "#FFFF00", "#FFFFFF"], sampleRate = 48000) {
+        super(canvas, minDecibels, maxDecibels, sampleRate);
 
         this.data = data;
         this.levels = new Uint8Array(data.length);
-        this.minValue = minValue;
-        this.maxValue = maxValue;
         this.imageData = null;
         this.updated = false;
 
@@ -76,10 +95,10 @@ export class Waterfall extends FrequencyVisualizer {
         if (data) this.data = data;
 
         for (let i = 0; i < this.data.length; i++) {
-            this.levels[i] = this.clampAndRemap(
+            this.levels[i] = this.remap(
                 this.data[i],
-                this.minValue,
-                this.maxValue,
+                this.minDecibels,
+                this.maxDecibels,
                 0,
                 255
             );
@@ -90,20 +109,21 @@ export class Waterfall extends FrequencyVisualizer {
     render() {
         if (!this.updated || !this.imageData) return;
 
+        const { canvas, levels, minDecibels, maxDecibels, colors } = this;
+        const length = levels.length;
+
         const pixels = this.imageData.data;
-        const width = this.canvas.width;
-        const height = this.canvas.height;
+        const width = canvas.width;
         const rowSize = width * 4;
 
         // Сдвигаем изображение вниз
         pixels.copyWithin(rowSize, 0, pixels.length - rowSize);
 
         // Заполняем новую строку с учетом частотной шкалы
-        const step = this.data.length / width;
-        for (let x = 0; x < width; x++) {
+        /* for (let x = 0; x < width; x++) {
             const freq = this.xToFrequency(x);
-            const dataIndex = Math.floor((freq / (this.sampleRate / 2)) * this.data.length);
-            const level = this.levels[Math.min(dataIndex, this.data.length - 1)];
+            const dataIndex = Math.floor((freq / (sampleRate / 2)) * data.length);
+            const level = this.levels[Math.min(dataIndex, data.length - 1)];
 
             const [r, g, b] = this.colors[level];
             const idx = x * 4;
@@ -111,7 +131,42 @@ export class Waterfall extends FrequencyVisualizer {
             pixels[idx + 1] = g;
             pixels[idx + 2] = b;
             pixels[idx + 3] = 255;
+        } */
+
+
+        const firstFreq = this.frequencyScale === 'log' ? 20 : 0; // Для логарифма начинаем с 20 Гц
+        let ox = this.frequencyToX(firstFreq) | 0;
+
+        // Оптимизация: рисуем только каждый N-ый пиксель
+        const stride = Math.max(1, Math.floor(length / (width * 2)));
+
+        // Рисуем спектр с учетом выбранной шкалы
+        for (let i = stride; i < length; i += stride) {
+            // Рассчитываем частоту для текущей точки
+            const freq = (i / length) * (this.sampleRate / 2);
+
+            // Пропускаем частоты ниже 20 Гц в логарифмическом режиме
+            if (this.frequencyScale === 'log' && freq < 20) continue;
+
+            const xe = this.frequencyToX(freq) | 0;
+            const level = this.remap(this.valueToDecibels(levels[i]), minDecibels, maxDecibels, 0, 255);
+            const [r, g, b] = colors[level];
+
+            for (let x = ox; x < xe; ++x) {
+                const idx = x * 4;
+                pixels[idx] = r;
+                pixels[idx + 1] = g;
+                pixels[idx + 2] = b;
+                pixels[idx + 3] = 255;
+            }
+            ox = xe;
         }
+
+
+
+
+
+
 
         this.ctx.putImageData(this.imageData, 0, 0);
         this.updated = false;
@@ -147,23 +202,15 @@ export class Waterfall extends FrequencyVisualizer {
         window.removeEventListener("resize", this.handleResize);
     }
 
-    clampAndRemap(x, srcMin, srcMax, dstMin, dstMax) {
-        if (srcMax === srcMin) return dstMin;
-        x = Math.max(srcMin, Math.min(x, srcMax));
-        return dstMin + ((x - srcMin) * (dstMax - dstMin)) / (srcMax - srcMin);
-    }
 }
 
 
 export class Spectrum extends FrequencyVisualizer {
     constructor(canvas, data, minDecibels, maxDecibels, sampleRate) {
-        super(canvas, sampleRate);
+        super(canvas, minDecibels, maxDecibels, sampleRate);
 
         this.data = data;
         this.levels = new Uint8Array(data.length);
-        this.minDecibels = minDecibels;
-        this.maxDecibels = maxDecibels;
-        this.decibelRange = maxDecibels - minDecibels;
 
         this.updated = false;
         this.bands = {};
@@ -227,16 +274,6 @@ export class Spectrum extends FrequencyVisualizer {
         }
     }
 
-
-    // Преобразование значения в децибелы
-    valueToDecibels(value) {
-        return this.minDecibels + (value / 255) * this.decibelRange;
-    }
-
-    // Преобразование децибел в значение
-    decibelsToValue(db) {
-        return ((db - this.minDecibels) / this.decibelRange) * 255;
-    }
 
     drawDecibelScale() {
         const { ctx, canvas, minDecibels, maxDecibels } = this;
@@ -372,8 +409,8 @@ export class Spectrum extends FrequencyVisualizer {
     }
 
     drawSpectrum() {
-        const { ctx, canvas, levels, minDecibels, decibelRange } = this;
-        const height = canvas.height;
+        const { ctx, canvas, levels, minDecibels, maxDecibels } = this;
+        const { width, height } = canvas;
         const length = levels.length;
 
         // Очищаем путь
@@ -384,11 +421,11 @@ export class Spectrum extends FrequencyVisualizer {
         // Рассчитываем первый точку
         const firstFreq = this.frequencyScale === 'log' ? 20 : 0; // Для логарифма начинаем с 20 Гц
         let x = this.frequencyToX(firstFreq);
-        let y = height - (this.valueToDecibels(levels[0]) - minDecibels) / decibelRange * height;
+        let y = height - this.remap(this.valueToDecibels(levels[0]), minDecibels, maxDecibels, 0, height);
         ctx.moveTo(x, y);
 
         // Оптимизация: рисуем только каждый N-ый пиксель
-        const stride = Math.max(1, Math.floor(length / (canvas.width * 2)));
+        const stride = Math.max(1, Math.floor(length / (width * 2)));
 
         // Рисуем спектр с учетом выбранной шкалы
         for (let i = stride; i < length; i += stride) {
@@ -399,7 +436,7 @@ export class Spectrum extends FrequencyVisualizer {
             if (this.frequencyScale === 'log' && freq < 20) continue;
 
             x = this.frequencyToX(freq);
-            y = height - (this.valueToDecibels(levels[i]) - minDecibels) / decibelRange * height;
+            y = height - this.remap(this.valueToDecibels(levels[i]), minDecibels, maxDecibels, 0, height);
             ctx.lineTo(x, y);
         }
 
