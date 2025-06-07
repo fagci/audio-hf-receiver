@@ -287,6 +287,14 @@
                     channels.push({name: `${(i / 1000).toFixed(0)}kHz`, shift: i});
                 }
 
+                spectrum.addBand(300, 2000, '#444444', 'Common tech');
+                spectrum.addBand(2000, 5000, '#444444', 'Common HF');
+                spectrum.addBand(5000, 7000, '#444444', 'Insects');
+                spectrum.addBand(8000, 12000, '#444444', 'Ultrasonic');
+                spectrum.addBand(12000, 16000, '#444444', 'Old ear');
+                spectrum.addBand(16000, 20000, '#444444', 'New ear');
+                spectrum.addBand(20000, 96000, '#446644', 'Real ultrasonic');
+
                 source.connect(analyser);
 
                 channelContainer.innerHTML = '';

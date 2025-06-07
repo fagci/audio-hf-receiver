@@ -14,7 +14,8 @@ class FrequencyVisualizer {
             background: '#121212',
             grid: 'rgba(255,255,255,0.1)',
             scale: '#222222',
-            scaleText: 'grey'
+            scaleText: 'grey',
+            bands: '#ff0000',
         };
     }
 
@@ -263,12 +264,13 @@ export class Spectrum extends FrequencyVisualizer {
         this.colors.spectrum = gradient;
     }
 
-    addBand(start, end, color = null) {
+    addBand(start, end, color = null, title = null) {
         const key = `${start},${end}`;
         this.bands[key] = {
             start,
             end,
-            color: color || this.colors.bands
+            color: color || this.colors.bands,
+            title
         };
     }
 
@@ -312,15 +314,14 @@ export class Spectrum extends FrequencyVisualizer {
 
             // Градиент для зоны (более красивый эффект)
             const gradient = ctx.createLinearGradient(startX, 0, endX, 0);
-            if (!band.color) {
-                band.color = '#ff0000';
-            }
             gradient.addColorStop(0, `${band.color}40`);
             gradient.addColorStop(0.5, `${band.color}20`);
             gradient.addColorStop(1, `${band.color}40`);
 
-            ctx.fillStyle = gradient;
-            ctx.fillRect(startX, 0, bandWidth, canvas.height);
+            const startY = band.title ? canvas.height - 15 : 0;
+
+            ctx.fillStyle = band.title ? `${band.color}40` : gradient;
+            ctx.fillRect(startX, startY, bandWidth, canvas.height - startY);
 
             // Границы диапазона с тенью
             ctx.strokeStyle = band.color;
@@ -328,13 +329,13 @@ export class Spectrum extends FrequencyVisualizer {
 
             // Левая граница
             ctx.beginPath();
-            ctx.moveTo(startX, 0);
+            ctx.moveTo(startX, startY);
             ctx.lineTo(startX, canvas.height);
             ctx.stroke();
 
             // Правая граница
             ctx.beginPath();
-            ctx.moveTo(endX, 0);
+            ctx.moveTo(endX, startY);
             ctx.lineTo(endX, canvas.height);
             ctx.stroke();
 
@@ -345,9 +346,16 @@ export class Spectrum extends FrequencyVisualizer {
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'top';
 
-                const centerX = startX + bandWidth / 2;
+                let centerX = startX + bandWidth / 2;
+                if (centerX > canvas.width) {
+                    centerX = startX + (canvas.width - startX) / 2;
+                }
                 const freqText = this.formatFrequencyRange(band.start, band.end);
-                ctx.fillText(freqText, centerX, 5);
+                if (band.title) {
+                    ctx.fillText(band.title, centerX, canvas.height - 12);
+                } else {
+                    ctx.fillText(freqText, centerX, 5);
+                }
             }
         });
     }
