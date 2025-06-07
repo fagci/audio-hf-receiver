@@ -78,8 +78,8 @@
     </select>
 
     <select id="scaleSelect">
-        <option value="log">Log</option>
         <option value="linear">Linear</option>
+        <option value="log">Log</option>
     </select>
 
     <button id="start">Start</button>
@@ -217,7 +217,7 @@
             oscillator.start();
 
             const multiplier = context.createGain();
-            multiplier.gain.value = 2;
+            multiplier.gain.value = 5;
 
             bwFilter.output.connect(multiplier);
             oscillator.connect(multiplier.gain);
